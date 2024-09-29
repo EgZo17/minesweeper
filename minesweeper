@@ -1,0 +1,277 @@
+import random
+import sys
+
+
+class Cell:
+
+    def __init__(self, bomb):
+        self.bomb = bomb  # bool
+        self.opened = False
+        self.flag = False
+        self.question = False
+        self.neighbours = None
+
+
+class Board:
+
+    def __init__(self, x=10, y=10, bombs_quantity=0):
+        self.width = x
+        self.height = y
+        if bombs_quantity == 0:
+            self.bombs_quantity = x * y // 8
+            if self.width * self.height < 8:
+                self.bombs_quantity = 1
+        else:
+            self.bombs_quantity = bombs_quantity
+        self.board = {}
+        self.started = False
+        self.lost = False
+        self.won = False
+        self.exit = False
+        self.opened_cells = 0
+        for i in range(x):
+            for j in range(y):
+                self.board[(i, j)] = Cell(False)
+
+    def place_bombs(self):
+        for i in range(self.bombs_quantity):
+            x1 = random.randint(0, self.width - 1)
+            y1 = random.randint(0, self.height - 1)
+            while self.board[(x1, y1)].bomb or self.board[(x1, y1)].opened:
+                x1 = random.randint(0, self.width - 1)
+                y1 = random.randint(0, self.height - 1)
+            self.board[(x1, y1)].bomb = True
+
+    def identify_neighbours(self, x, y):
+        if self.board[(x, y)].bomb:
+            self.board[(x, y)].neighbours = '(!)'
+            return
+        counter = 0
+        for i in range(x - 1, x + 2):
+            for j in range(y - 1, y + 2):
+                try:
+                    if self.board[(i, j)].bomb:
+                        counter += 1
+                except KeyError:
+                    continue
+        self.board[(x, y)].neighbours = counter
+
+    def mark_q(self, x, y):
+        if not self.board[(x, y)].opened:
+            self.board[(x, y)].flag = False
+            self.board[(x, y)].question = True
+
+    def mark_f(self, x, y):
+        if not self.board[(x, y)].opened:
+            self.board[(x, y)].flag = True
+            self.board[(x, y)].question = False
+
+    def unmark(self, x, y):
+        self.board[(x, y)].flag = False
+        self.board[(x, y)].question = False
+
+    def first_open(self, x, y):
+        self.board[(x, y)].opened = True
+        self.started = True
+        self.opened_cells += 1
+        self.place_bombs()
+        for i in range(self.width):
+            for j in range(self.height):
+                self.identify_neighbours(i, j)
+        if self.board[(x, y)].neighbours == 0:
+            self.opened_cells -= 1
+            self.board[(x, y)].opened = False
+            self.open(x, y)
+
+    def open(self, x, y):
+        if not self.board[(x, y)].flag and not self.board[(x, y)].question:
+            if not self.board[(x, y)].opened:
+                self.opened_cells += 1
+                self.board[(x, y)].opened = True
+                if self.board[(x, y)].bomb:
+                    self.lost = True
+                    for k in self.board.keys():
+                        if self.board[k].bomb:
+                            self.unmark(k[0], k[1])
+                            self.open(k[0], k[1])
+                    return
+                if self.board[(x, y)].neighbours == 0:
+                    for i in range(x - 1, x + 2):
+                        for j in range(y - 1, y + 2):
+                            try:
+                                self.open(i, j)
+                            except KeyError:
+                                continue
+
+    def update(self):
+        if self.lost:
+            return 'lost'
+        if self.width * self.height - self.bombs_quantity == self.opened_cells:
+            self.won = True
+            return 'won'
+        return 'continue'
+
+    def commands_list(self):
+        print()
+        print('Команды:')
+        print('"открыть x-y" - открыть клетку по координатам.')
+        print('"флаг x-y" - поставить отметку "флаг" на точку по координатам.')
+        print('"вопрос x-y" - поставить отметку "вопрос" на точку по координатам.')
+        print('"убрать x-y" - убрать отметку с точки по координатам.')
+        print('Для вызова этого сообщения ещё раз введите "команды".')
+        print('Для досрочного завершения игры введите "завершить".')
+        print('-' * 40)
+
+    def show(self):
+        print()
+        line = ['   ' + ' ' * (2 + len(list(str(self.height))))]
+        for n in range(1, self.width + 1):
+            line.append('{' + str(n)[-1] + '}')
+            # для того, чтобы не нарушать форматирование, в координатах будет только последняя цифра икса
+        print(''.join(line))
+        print()
+        for j in range(self.height):
+            m = j + 1
+            line = ['{' + str(m) + '}' + ' ' * (2 + len(list(str(self.height))) - len(list(str(m))) + 1)]
+            for i in range(self.width):
+                if not self.board[(i, j)].opened:
+                    if self.board[(i, j)].flag:
+                        line.append('[F]')
+                    elif self.board[(i, j)].question:
+                        line.append('[?]')
+                    else:
+                        line.append('[ ]')
+                else:
+                    if self.board[(i, j)].neighbours == 0:
+                        line.append('   ')
+                    elif self.board[(i, j)].neighbours == '(!)':
+                        line.append('(!)')
+                    else:
+                        line.append(f' {self.board[(i, j)].neighbours} ')
+            print(''.join(line))
+        if self.update() == 'continue':
+            print()
+            print('--> Выберите действие и клетку.')
+        elif self.update() == 'lost':
+            print()
+            print('--> Вы проиграли! :(')
+        else:
+            print()
+            print('--> Поздравляем! Вы победили! :)')
+        print('-' * 40)
+
+    def players_move(self, command, coords):
+        success = True
+        try:
+            a = int(coords[0]) - 1
+            b = int(coords[1]) - 1
+            point = self.board[(a, b)]
+        except ValueError:
+            print('Некорректные координаты, попробуйте ещё раз!')
+            success = False
+            return success
+        except KeyError:
+            print('Некорректные координаты, попробуйте ещё раз!')
+            success = False
+            return success
+        if not self.lost and not self.won:
+            if command == 'флаг':
+                self.mark_f(int(coords[0]) - 1, int(coords[1]) - 1)
+            elif command == 'вопрос':
+                self.mark_q(int(coords[0]) - 1, int(coords[1]) - 1)
+            elif command == 'убрать':
+                self.unmark(int(coords[0]) - 1, int(coords[1]) - 1)
+            elif command == 'открыть':
+                if self.started:
+                    self.open(int(coords[0]) - 1, int(coords[1]) - 1)
+                else:
+                    self.first_open(int(coords[0]) - 1, int(coords[1]) - 1)
+            elif command == 'команды':
+                self.commands_list()
+                success = False
+            elif command == 'завершить':
+                print('Игра завершена досрочно.')
+                sys.exit()
+            else:
+                print('Неизвестная команда, попробуйте ещё раз!')
+                success = False
+        return success
+
+
+first = True
+while True:
+    err1 = True
+    err2 = True
+    x_F = None
+    y_F = None
+    if first:
+        print('Здравствуйте!', end=' ')
+        first = False
+    else:
+        print()
+        print('=' * 40)
+        print()
+    print('Для начала игры введите размер поля в формате "x-y" (стандарт: 9-9).')
+    size = input()
+    while err1:
+        try:
+            x_F, y_F = map(int, size.split('-'))
+            err1 = False
+        except ValueError:
+            print('Ошибка ввода, попробуйте ещё раз.')
+            err1 = True
+            size = input()
+    print('Отлично! Теперь введите желаемое количество мин или введите 0 для значения по умолчанию.')
+    bombs_F = input()
+    while err2:
+        try:
+            bombs_F = int(bombs_F)
+            err2 = False
+        except ValueError:
+            print('Ошибка ввода, попробуйте ещё раз.')
+            err2 = True
+            bombs_F = input()
+            continue
+        if bombs_F < 0:
+            err2 = True
+            print('Количество бомб не может быть отрицательным! Попробуйте ещё раз.')
+            bombs_F = input()
+            continue
+    current_board = Board(x_F, y_F, bombs_F)
+    current_board.show()
+    current_board.commands_list()
+    while not current_board.lost and not current_board.won:
+        line_F = input().split(' ')
+        command_F = line_F[0]
+        try:
+            coord_x_F = line_F[1].split('-')[0]
+            coord_y_F = line_F[1].split('-')[1]
+        except IndexError:
+            coord_x_F, coord_y_F = 'n/a', 'n/a'
+            if len(line_F) == 1 and line_F[0] not in ['открыть', 'флаг', 'вопрос',
+                                                      'убрать']:
+                coord_x_F, coord_y_F = 1, 1
+        ok = current_board.players_move(command_F, [coord_x_F, coord_y_F])
+        while not ok:
+            line_F = input().split(' ')
+            command_F = line_F[0]
+            try:
+                coord_x_F = line_F[1].split('-')[0]
+                coord_y_F = line_F[1].split('-')[1]
+            except IndexError:
+                coord_x_F, coord_y_F = 'n/a', 'n/a'
+                if len(line_F) == 1 and line_F[0] not in ['открыть', 'флаг', 'вопрос',
+                                                          'убрать']:
+                    coord_x_F, coord_y_F = 1, 1
+            ok = current_board.players_move(command_F, [coord_x_F, coord_y_F])
+        current_board.show()
+    print()
+    print('Хотите сыграть ещё раз? Введите "да" для продолжения или "нет" для выхода.')
+    answer = input()
+    while answer not in ['да', 'нет']:
+        print('Ошибка ввода, попробуйте ещё раз.')
+        answer = input()
+    if answer == 'да':
+        continue
+    else:
+        sys.exit()
